@@ -59,10 +59,9 @@ ${lines}
 }
 
 interface DebugInfo {
-  connectionMode: 'agentId' | 'token-webrtc' | 'websocket' | 'none';
-  token: 'pending' | 'OK' | 'FAIL' | 'skipped';
+  token: 'pending' | 'OK' | 'FAIL';
   micPermission: 'pending' | 'granted' | 'denied';
-  session: 'idle' | 'starting' | 'started' | 'failed' | 'fallback-ws';
+  session: 'idle' | 'starting' | 'started' | 'failed';
   audioWarning: string;
   lastError: string;
   lastEventType: string;
@@ -82,14 +81,9 @@ const VoiceAssistant: React.FC = () => {
   const [pickerPayload, setPickerPayload] = useState<MenuPickerPayload | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const contextSent = useRef(false);
-  const gotEventsRef = useRef(false);
   const greetingSentRef = useRef(false);
-  const gotAgentTextRef = useRef(false);
-  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const agentIdRef = useRef<string | null>(null);
 
   const [debug, setDebug] = useState<DebugInfo>({
-    connectionMode: 'none',
     token: 'pending',
     micPermission: 'pending',
     session: 'idle',
@@ -110,7 +104,6 @@ const VoiceAssistant: React.FC = () => {
 
   const processAgentResponse = useCallback((text: string) => {
     if (!text) return;
-    gotAgentTextRef.current = true;
     setAgentText(text);
     const action = extractUIAction(text);
     if (action && action.action === 'OPEN_MENU_PICKER') {
@@ -121,40 +114,54 @@ const VoiceAssistant: React.FC = () => {
     }
   }, []);
 
-  const markEvent = useCallback((eventName: string) => {
-    gotEventsRef.current = true;
-    updateDebug({ lastEventType: eventName });
-  }, [updateDebug]);
-
   const conversation = useConversation({
     onConnect: () => {
-      console.log('[EL] Connected');
+      console.log('[EL] Connected (WebSocket)');
       setError('');
-      markEvent('onConnect');
-      updateDebug({ session: 'started' });
+      updateDebug({ session: 'started', lastEventType: 'onConnect' });
+
+      // Send context + greeting once connected
+      if (!contextSent.current) {
+        try {
+          conversation.sendContextualUpdate(buildMenuContext());
+          contextSent.current = true;
+          console.log('[EL] Menu context sent');
+        } catch (e) {
+          console.error('[EL] Context send failed:', e);
+        }
+      }
+      if (!greetingSentRef.current) {
+        setTimeout(() => {
+          try {
+            conversation.sendUserMessage('Привет');
+            greetingSentRef.current = true;
+            updateDebug({ greetingSent: true });
+            console.log('[EL] Greeting sent');
+          } catch (e) {
+            console.error('[EL] Greeting send failed:', e);
+          }
+        }, 500);
+      }
     },
     onDisconnect: () => {
       console.log('[EL] Disconnected');
       contextSent.current = false;
       greetingSentRef.current = false;
-      gotAgentTextRef.current = false;
-      markEvent('onDisconnect');
-      updateDebug({ session: 'idle', isSpeaking: false, greetingSent: false });
+      updateDebug({ session: 'idle', isSpeaking: false, greetingSent: false, lastEventType: 'onDisconnect' });
     },
     onError: (err) => {
       console.error('[EL] Error:', err);
       const msg = typeof err === 'string' ? err : (err as any)?.message || String(err);
       setError(msg);
-      markEvent('onError');
-      updateDebug({ lastError: msg });
+      updateDebug({ lastError: msg, lastEventType: 'onError' });
     },
     onMessage: (message: any) => {
       console.log('[EL] Message RAW:', JSON.stringify(message).slice(0, 500));
-      markEvent(`msg:${message.type || 'unknown'}`);
       setDebug(prev => ({
         ...prev,
         messageCount: prev.messageCount + 1,
         lastRawMessage: JSON.stringify(message).slice(0, 200),
+        lastEventType: `msg:${message.type || 'unknown'}`,
       }));
 
       if (message.type === 'user_transcript') {
@@ -166,122 +173,51 @@ const VoiceAssistant: React.FC = () => {
         processAgentResponse(response);
       }
 
-      const fallbackText = message?.message ?? message?.text ?? message?.transcript ?? 
+      // Fallback text extraction for other message shapes
+      const fallbackText = message?.message ?? message?.text ?? message?.transcript ??
         message?.data?.text ?? message?.content?.[0]?.text ?? '';
       if (fallbackText && message.type !== 'user_transcript' && message.type !== 'agent_response') {
-        console.log('[EL] Fallback text extracted:', fallbackText);
+        console.log('[EL] Fallback text:', fallbackText);
         processAgentResponse(fallbackText);
       }
     },
     onAudio: ((audio: any) => {
-      console.log('[EL] onAudio event received');
-      markEvent('onAudio');
-      setDebug(prev => ({ ...prev, audioEventCount: prev.audioEventCount + 1 }));
+      console.log('[EL] onAudio event');
+      setDebug(prev => ({ ...prev, audioEventCount: prev.audioEventCount + 1, lastEventType: 'onAudio' }));
     }) as any,
     onModeChange: ((mode: any) => {
       console.log('[EL] ModeChange:', mode);
       const modeStr = typeof mode === 'object' ? JSON.stringify(mode) : String(mode);
-      markEvent(`mode:${modeStr}`);
       const speaking = mode?.mode === 'speaking' || mode === 'speaking';
-      updateDebug({ isSpeaking: speaking });
+      updateDebug({ isSpeaking: speaking, lastEventType: `mode:${modeStr}` });
     }) as any,
     onStatusChange: ((status: any) => {
       console.log('[EL] StatusChange:', status);
-      markEvent(`status:${typeof status === 'object' ? JSON.stringify(status) : status}`);
+      updateDebug({ lastEventType: `status:${typeof status === 'object' ? JSON.stringify(status) : status}` });
     }) as any,
     onVadScore: ((score: any) => {
-      markEvent(`vad:${typeof score === 'number' ? score.toFixed(2) : score}`);
+      updateDebug({ lastEventType: `vad:${typeof score === 'number' ? score.toFixed(2) : score}` });
     }) as any,
-    onDebug: ((debugData: any) => {
-      console.log('[EL] onDebug:', debugData);
-      markEvent(`debug:${typeof debugData === 'object' ? JSON.stringify(debugData).slice(0, 80) : debugData}`);
+    onDebug: ((data: any) => {
+      console.log('[EL] onDebug:', data);
+      updateDebug({ lastEventType: `debug:${typeof data === 'object' ? JSON.stringify(data).slice(0, 80) : data}` });
     }) as any,
   });
-
-  // Send greeting + context after connection
-  const sendGreetingAndContext = useCallback(() => {
-    if (!contextSent.current) {
-      try {
-        conversation.sendContextualUpdate(buildMenuContext());
-        contextSent.current = true;
-        console.log('[EL] Menu context sent');
-      } catch (e) {
-        console.error('[EL] Context send failed:', e);
-      }
-    }
-
-    // Send initial message to trigger agent's first response
-    if (!greetingSentRef.current) {
-      try {
-        setTimeout(() => {
-          conversation.sendUserMessage('Привет');
-          greetingSentRef.current = true;
-          updateDebug({ greetingSent: true });
-          console.log('[EL] Greeting "Привет" sent');
-
-          // Start fallback timer AFTER greeting is sent
-          if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
-          fallbackTimerRef.current = setTimeout(() => {
-            if (!gotAgentTextRef.current) {
-              console.warn('[EL] No agent response 3s after greeting, triggering WS fallback');
-              startWebSocketFallback();
-            }
-          }, 3000);
-        }, 500);
-      } catch (e) {
-        console.error('[EL] Greeting send failed:', e);
-      }
-    }
-  }, [conversation, updateDebug]);
-
-  // Fallback to websocket
-  const startWebSocketFallback = useCallback(async () => {
-    console.log('[EL] Fallback → websocket');
-    updateDebug({ session: 'fallback-ws', connectionMode: 'websocket', lastEventType: 'fallback→ws' });
-    setError('');
-    contextSent.current = false;
-    greetingSentRef.current = false;
-    gotAgentTextRef.current = false;
-
-    try {
-      await conversation.endSession();
-    } catch { /* ignore */ }
-
-    try {
-      const { data, error: fnErr } = await supabase.functions.invoke('elevenlabs-signed-url');
-      if (fnErr || !data?.signed_url) {
-        throw new Error(fnErr?.message || 'No signed_url');
-      }
-
-      await conversation.startSession({
-        signedUrl: data.signed_url,
-      } as any);
-
-      setTimeout(() => sendGreetingAndContext(), 1000);
-    } catch (e: any) {
-      console.error('[EL] WS fallback failed:', e);
-      setError('Fallback WS failed: ' + (e.message || 'Unknown'));
-      updateDebug({ session: 'failed', lastError: e.message || 'Unknown' });
-    }
-  }, [conversation, sendGreetingAndContext, updateDebug]);
 
   const start = useCallback(async () => {
     setIsConnecting(true);
     setError('');
-    gotEventsRef.current = false;
-    gotAgentTextRef.current = false;
-    greetingSentRef.current = false;
     contextSent.current = false;
+    greetingSentRef.current = false;
     updateDebug({
       session: 'starting', lastError: '', token: 'pending',
       micPermission: 'pending', messageCount: 0, audioEventCount: 0,
-      connectionMode: 'none', isSpeaking: false, lastEventType: '',
-      lastRawMessage: '', greetingSent: false, audioWarning: '',
+      isSpeaking: false, lastEventType: '', lastRawMessage: '',
+      greetingSent: false, audioWarning: '',
     });
 
     try {
-      // 1. Mic
-      console.log('[EL] Requesting mic...');
+      // 1. Mic permission
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         updateDebug({ micPermission: 'granted', audioTracksCount: stream.getAudioTracks().length });
@@ -291,49 +227,23 @@ const VoiceAssistant: React.FC = () => {
         throw new Error('Микрофон не доступен: ' + micErr.message);
       }
 
-      // 2. Get token + agent_id from edge function
-      console.log('[EL] Fetching token + agent_id...');
-      const { data, error: fnError } = await supabase.functions.invoke('elevenlabs-conversation-token');
-      console.log('[EL] Token response:', data, fnError);
+      // 2. Get signedUrl from edge function
+      console.log('[EL] Fetching signed URL...');
+      const { data, error: fnError } = await supabase.functions.invoke('elevenlabs-signed-url');
+      console.log('[EL] Signed URL response:', data, fnError);
 
-      const agentId = data?.agent_id;
-      const token = data?.token;
-      agentIdRef.current = agentId || null;
-
-      // 3. Try agentId first (public agent), then token (private agent)
-      if (agentId) {
-        console.log('[EL] Trying agentId connection...');
-        updateDebug({ connectionMode: 'agentId', token: token ? 'OK' : 'skipped' });
-        try {
-          await conversation.startSession({
-            agentId,
-          } as any);
-          updateDebug({ lastEventType: 'startSession(agentId)' });
-        } catch (agentIdErr: any) {
-          console.warn('[EL] agentId failed, trying token...', agentIdErr);
-          if (token) {
-            updateDebug({ connectionMode: 'token-webrtc', token: 'OK' });
-            await conversation.startSession({
-              conversationToken: token,
-            } as any);
-            updateDebug({ lastEventType: 'startSession(token)' });
-          } else {
-            throw agentIdErr;
-          }
-        }
-      } else if (token) {
-        console.log('[EL] Using token connection...');
-        updateDebug({ connectionMode: 'token-webrtc', token: 'OK' });
-        await conversation.startSession({
-          conversationToken: token,
-        } as any);
-        updateDebug({ lastEventType: 'startSession(token)' });
-      } else {
-        updateDebug({ token: 'FAIL', lastError: fnError?.message || 'No token/agent_id' });
-        throw new Error(fnError?.message || 'No token or agent_id received');
+      if (fnError || !data?.signed_url) {
+        updateDebug({ token: 'FAIL', lastError: fnError?.message || 'No signed_url' });
+        throw new Error(fnError?.message || 'No signed_url received');
       }
+      updateDebug({ token: 'OK' });
 
-      // 4. Set volume to max
+      // 3. Start session with signedUrl (WebSocket only)
+      await conversation.startSession({
+        signedUrl: data.signed_url,
+      } as any);
+
+      // 4. Set volume
       try {
         conversation.setVolume({ volume: 1 });
         console.log('[EL] Volume set to 1');
@@ -341,14 +251,11 @@ const VoiceAssistant: React.FC = () => {
         console.warn('[EL] setVolume failed:', e);
       }
 
-      // 5. Send context + greeting after 1s (gives onConnect time to fire)
-      setTimeout(() => sendGreetingAndContext(), 1000);
-
-      // 6. Check for audio events after 8s — if none, warn about text-only
+      // 5. Audio watchdog — warn if text-only after 8s
       setTimeout(() => {
         setDebug(prev => {
           if (prev.audioEventCount === 0 && prev.messageCount > 0) {
-            console.warn('[EL] Messages received but no audio events — likely text-only mode');
+            console.warn('[EL] Text-only detected');
             return { ...prev, audioWarning: 'AUDIO_DISABLED_OR_TEXT_ONLY' };
           }
           return prev;
@@ -362,10 +269,9 @@ const VoiceAssistant: React.FC = () => {
     } finally {
       setIsConnecting(false);
     }
-  }, [conversation, updateDebug, sendGreetingAndContext]);
+  }, [conversation, updateDebug]);
 
   const stop = useCallback(async () => {
-    if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
     await conversation.endSession();
     setTranscript('');
     setAgentText('');
@@ -405,11 +311,11 @@ const VoiceAssistant: React.FC = () => {
             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
               className="mb-4 bg-secondary/50 rounded-xl p-3 text-xs font-mono space-y-1 border border-border/50">
               <p className="font-semibold text-muted-foreground mb-1">🔧 Debug Panel</p>
-              <p>connectionMode: <span className="text-primary">{debug.connectionMode}</span></p>
-              <p>token: <span className={debug.token === 'OK' ? 'text-green-600' : debug.token === 'FAIL' ? 'text-destructive' : 'text-muted-foreground'}>{debug.token}</span></p>
+              <p>mode: <span className="text-primary">WebSocket (signedUrl)</span></p>
+              <p>signedUrl: <span className={debug.token === 'OK' ? 'text-green-600' : debug.token === 'FAIL' ? 'text-destructive' : 'text-muted-foreground'}>{debug.token}</span></p>
               <p>micPermission: <span className={debug.micPermission === 'granted' ? 'text-green-600' : debug.micPermission === 'denied' ? 'text-destructive' : 'text-muted-foreground'}>{debug.micPermission}</span></p>
               <p>audioTracks: {debug.audioTracksCount}</p>
-              <p>session: <span className={debug.session === 'started' || debug.session === 'fallback-ws' ? 'text-green-600' : debug.session === 'failed' ? 'text-destructive' : 'text-muted-foreground'}>{debug.session}</span></p>
+              <p>session: <span className={debug.session === 'started' ? 'text-green-600' : debug.session === 'failed' ? 'text-destructive' : 'text-muted-foreground'}>{debug.session}</span></p>
               <p>status (SDK): {conversation.status}</p>
               <p>isSpeaking: <span className={isSpeaking ? 'text-green-600 font-bold' : ''}>{String(isSpeaking)}</span></p>
               <p>greetingSent: <span className={debug.greetingSent ? 'text-green-600' : 'text-muted-foreground'}>{String(debug.greetingSent)}</span></p>
