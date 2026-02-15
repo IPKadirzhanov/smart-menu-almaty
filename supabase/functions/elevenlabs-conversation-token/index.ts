@@ -37,7 +37,7 @@ serve(async (req) => {
 
     const data = await response.json();
 
-    return new Response(JSON.stringify({ token: data.token }), {
+    return new Response(JSON.stringify({ token: data.token, agent_id: ELEVENLABS_AGENT_ID }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error: unknown) {
