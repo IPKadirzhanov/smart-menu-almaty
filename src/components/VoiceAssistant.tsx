@@ -63,6 +63,7 @@ interface DebugInfo {
   token: 'pending' | 'OK' | 'FAIL' | 'skipped';
   micPermission: 'pending' | 'granted' | 'denied';
   session: 'idle' | 'starting' | 'started' | 'failed' | 'fallback-ws';
+  audioWarning: string;
   lastError: string;
   lastEventType: string;
   audioTracksCount: number;
@@ -92,6 +93,7 @@ const VoiceAssistant: React.FC = () => {
     token: 'pending',
     micPermission: 'pending',
     session: 'idle',
+    audioWarning: '',
     lastError: '',
     lastEventType: '',
     audioTracksCount: 0,
@@ -155,7 +157,6 @@ const VoiceAssistant: React.FC = () => {
         lastRawMessage: JSON.stringify(message).slice(0, 200),
       }));
 
-      // Extract text from any possible shape
       if (message.type === 'user_transcript') {
         const text = message.user_transcription_event?.user_transcript || '';
         if (text) setTranscript(text);
@@ -165,7 +166,6 @@ const VoiceAssistant: React.FC = () => {
         processAgentResponse(response);
       }
 
-      // Generic fallback text extraction
       const fallbackText = message?.message ?? message?.text ?? message?.transcript ?? 
         message?.data?.text ?? message?.content?.[0]?.text ?? '';
       if (fallbackText && message.type !== 'user_transcript' && message.type !== 'agent_response') {
@@ -173,15 +173,28 @@ const VoiceAssistant: React.FC = () => {
         processAgentResponse(fallbackText);
       }
     },
+    onAudio: ((audio: any) => {
+      console.log('[EL] onAudio event received');
+      markEvent('onAudio');
+      setDebug(prev => ({ ...prev, audioEventCount: prev.audioEventCount + 1 }));
+    }) as any,
     onModeChange: ((mode: any) => {
       console.log('[EL] ModeChange:', mode);
-      markEvent(`mode:${JSON.stringify(mode)}`);
+      const modeStr = typeof mode === 'object' ? JSON.stringify(mode) : String(mode);
+      markEvent(`mode:${modeStr}`);
       const speaking = mode?.mode === 'speaking' || mode === 'speaking';
       updateDebug({ isSpeaking: speaking });
     }) as any,
     onStatusChange: ((status: any) => {
       console.log('[EL] StatusChange:', status);
-      markEvent(`status:${JSON.stringify(status)}`);
+      markEvent(`status:${typeof status === 'object' ? JSON.stringify(status) : status}`);
+    }) as any,
+    onVadScore: ((score: any) => {
+      markEvent(`vad:${typeof score === 'number' ? score.toFixed(2) : score}`);
+    }) as any,
+    onDebug: ((debugData: any) => {
+      console.log('[EL] onDebug:', debugData);
+      markEvent(`debug:${typeof debugData === 'object' ? JSON.stringify(debugData).slice(0, 80) : debugData}`);
     }) as any,
   });
 
@@ -263,7 +276,7 @@ const VoiceAssistant: React.FC = () => {
       session: 'starting', lastError: '', token: 'pending',
       micPermission: 'pending', messageCount: 0, audioEventCount: 0,
       connectionMode: 'none', isSpeaking: false, lastEventType: '',
-      lastRawMessage: '', greetingSent: false,
+      lastRawMessage: '', greetingSent: false, audioWarning: '',
     });
 
     try {
@@ -320,8 +333,27 @@ const VoiceAssistant: React.FC = () => {
         throw new Error(fnError?.message || 'No token or agent_id received');
       }
 
-      // 4. Send context + greeting after 1s (gives onConnect time to fire)
+      // 4. Set volume to max
+      try {
+        conversation.setVolume({ volume: 1 });
+        console.log('[EL] Volume set to 1');
+      } catch (e) {
+        console.warn('[EL] setVolume failed:', e);
+      }
+
+      // 5. Send context + greeting after 1s (gives onConnect time to fire)
       setTimeout(() => sendGreetingAndContext(), 1000);
+
+      // 6. Check for audio events after 8s — if none, warn about text-only
+      setTimeout(() => {
+        setDebug(prev => {
+          if (prev.audioEventCount === 0 && prev.messageCount > 0) {
+            console.warn('[EL] Messages received but no audio events — likely text-only mode');
+            return { ...prev, audioWarning: 'AUDIO_DISABLED_OR_TEXT_ONLY' };
+          }
+          return prev;
+        });
+      }, 8000);
 
     } catch (e: any) {
       console.error('[EL] Start error:', e);
@@ -385,9 +417,17 @@ const VoiceAssistant: React.FC = () => {
               <p>messageCount: {debug.messageCount} | audioEvents: {debug.audioEventCount}</p>
               {debug.lastRawMessage && <p className="break-all">lastRaw: <span className="text-muted-foreground">{debug.lastRawMessage}</span></p>}
               {debug.lastError && <p>lastError: <span className="text-destructive">{debug.lastError}</span></p>}
+              {debug.audioWarning && <p className="text-yellow-600 font-bold">⚠️ {debug.audioWarning}</p>}
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Audio disabled warning */}
+        {debug.audioWarning && isActive && (
+          <p className="text-sm text-yellow-700 mb-3 bg-yellow-100 p-2 rounded-lg">
+            ⚠️ Аудио отключено. Проверьте chat/text-only режим агента в ElevenLabs dashboard.
+          </p>
+        )}
 
         {/* Status indicator */}
         {isActive && status && (
