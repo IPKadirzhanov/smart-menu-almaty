@@ -194,6 +194,7 @@ export function getReplacements(currentItem: MenuItem, exclude: Tag[]): MenuItem
     .slice(0, 6);
 }
 
-export function formatPrice(price: number): string {
+export function formatPrice(price: number | undefined | null): string {
+  if (price == null) return '0 ₸';
   return price.toLocaleString('ru-KZ') + ' ₸';
 }

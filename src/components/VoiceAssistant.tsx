@@ -107,9 +107,18 @@ const VoiceAssistant: React.FC = () => {
     setAgentText(text);
     const action = extractUIAction(text);
     if (action && action.action === 'OPEN_MENU_PICKER') {
+      const variants = (action.variants || []).map((v: any) => ({
+        name: v.name || v.key || 'Вариант',
+        items: (v.items || []).map((it: any) => ({
+          id: it.id || it.name,
+          name: it.name || it.id,
+          price: it.price ?? it.priceKZT ?? it.totalKZT ?? 0,
+        })),
+        total: v.total ?? v.totalKZT ?? (v.items || []).reduce((s: number, it: any) => s + (it.price ?? it.priceKZT ?? 0), 0),
+      }));
       setPickerPayload({
         title: action.title || 'Подобранное меню',
-        variants: action.variants || [],
+        variants,
       });
     }
   }, []);
