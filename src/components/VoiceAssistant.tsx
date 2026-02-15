@@ -2,7 +2,7 @@
 
 import React, { useState, useCallback, useRef } from 'react';
 import { useConversation } from '@elevenlabs/react';
-import { Mic, MicOff, Volume2, Loader2, Bug } from 'lucide-react';
+import { Mic, MicOff, Volume2, Bug } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { extractUIAction } from '@/lib/uiAction';
@@ -59,13 +59,16 @@ ${lines}
 }
 
 interface DebugInfo {
-  token: 'pending' | 'OK' | 'FAIL';
+  connectionMode: 'agentId' | 'token-webrtc' | 'websocket' | 'none';
+  token: 'pending' | 'OK' | 'FAIL' | 'skipped';
   micPermission: 'pending' | 'granted' | 'denied';
-  connectionType: string;
-  session: 'idle' | 'starting' | 'started' | 'failed';
+  session: 'idle' | 'starting' | 'started' | 'failed' | 'fallback-ws';
   lastError: string;
   lastEventType: string;
   audioTracksCount: number;
+  messageCount: number;
+  audioEventCount: number;
+  isSpeaking: boolean;
 }
 
 const VoiceAssistant: React.FC = () => {
@@ -76,15 +79,21 @@ const VoiceAssistant: React.FC = () => {
   const [pickerPayload, setPickerPayload] = useState<MenuPickerPayload | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const contextSent = useRef(false);
+  const gotEventsRef = useRef(false);
+  const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const agentIdRef = useRef<string | null>(null);
 
   const [debug, setDebug] = useState<DebugInfo>({
+    connectionMode: 'none',
     token: 'pending',
     micPermission: 'pending',
-    connectionType: 'webrtc',
     session: 'idle',
     lastError: '',
     lastEventType: '',
     audioTracksCount: 0,
+    messageCount: 0,
+    audioEventCount: 0,
+    isSpeaking: false,
   });
 
   const updateDebug = useCallback((partial: Partial<DebugInfo>) => {
@@ -102,26 +111,35 @@ const VoiceAssistant: React.FC = () => {
     }
   }, []);
 
+  const markEvent = useCallback((eventName: string) => {
+    gotEventsRef.current = true;
+    updateDebug({ lastEventType: eventName });
+  }, [updateDebug]);
+
   const conversation = useConversation({
     onConnect: () => {
-      console.log('[ElevenLabs] Connected');
+      console.log('[EL] Connected');
       setError('');
-      updateDebug({ session: 'started', lastEventType: 'connected' });
+      markEvent('onConnect');
+      updateDebug({ session: 'started' });
     },
     onDisconnect: () => {
-      console.log('[ElevenLabs] Disconnected');
+      console.log('[EL] Disconnected');
       contextSent.current = false;
-      updateDebug({ session: 'idle', lastEventType: 'disconnected' });
+      markEvent('onDisconnect');
+      updateDebug({ session: 'idle', isSpeaking: false });
     },
     onError: (err) => {
-      console.error('[ElevenLabs] Error:', err);
+      console.error('[EL] Error:', err);
       const msg = typeof err === 'string' ? err : (err as any)?.message || String(err);
       setError(msg);
-      updateDebug({ lastError: msg, lastEventType: 'error' });
+      markEvent('onError');
+      updateDebug({ lastError: msg });
     },
     onMessage: (message: any) => {
-      console.log('[ElevenLabs] Message:', message.type, message);
-      updateDebug({ lastEventType: message.type });
+      console.log('[EL] Message:', message.type, message);
+      markEvent(`msg:${message.type}`);
+      setDebug(prev => ({ ...prev, messageCount: prev.messageCount + 1 }));
 
       if (message.type === 'user_transcript') {
         const text = message.user_transcription_event?.user_transcript || '';
@@ -134,80 +152,148 @@ const VoiceAssistant: React.FC = () => {
     },
   });
 
+  // Send context after connection
+  const sendContext = useCallback(() => {
+    if (!contextSent.current) {
+      try {
+        conversation.sendContextualUpdate(buildMenuContext());
+        contextSent.current = true;
+        console.log('[EL] Menu context sent');
+      } catch (e) {
+        console.error('[EL] Context send failed:', e);
+      }
+    }
+  }, [conversation]);
+
+  // Fallback to websocket
+  const startWebSocketFallback = useCallback(async () => {
+    console.log('[EL] Fallback → websocket');
+    updateDebug({ session: 'fallback-ws', connectionMode: 'websocket', lastEventType: 'fallback→ws' });
+    setError('');
+
+    try {
+      await conversation.endSession();
+    } catch { /* ignore */ }
+
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke('elevenlabs-signed-url');
+      if (fnErr || !data?.signed_url) {
+        throw new Error(fnErr?.message || 'No signed_url');
+      }
+
+      await conversation.startSession({
+        signedUrl: data.signed_url,
+      } as any);
+
+      setTimeout(sendContext, 1000);
+    } catch (e: any) {
+      console.error('[EL] WS fallback failed:', e);
+      setError('Fallback WS failed: ' + (e.message || 'Unknown'));
+      updateDebug({ session: 'failed', lastError: e.message || 'Unknown' });
+    }
+  }, [conversation, sendContext, updateDebug]);
+
   const start = useCallback(async () => {
     setIsConnecting(true);
     setError('');
-    updateDebug({ session: 'starting', lastError: '', token: 'pending', micPermission: 'pending' });
+    gotEventsRef.current = false;
+    updateDebug({
+      session: 'starting', lastError: '', token: 'pending',
+      micPermission: 'pending', messageCount: 0, audioEventCount: 0,
+      connectionMode: 'none', isSpeaking: false, lastEventType: '',
+    });
 
     try {
-      // 1. Request microphone
-      console.log('[ElevenLabs] Requesting microphone...');
+      // 1. Mic
+      console.log('[EL] Requesting mic...');
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         updateDebug({ micPermission: 'granted', audioTracksCount: stream.getAudioTracks().length });
-        console.log('[ElevenLabs] Mic granted, tracks:', stream.getAudioTracks().length);
-        // Stop tracks - the SDK will request its own
         stream.getTracks().forEach(t => t.stop());
       } catch (micErr: any) {
         updateDebug({ micPermission: 'denied', lastError: micErr.message });
         throw new Error('Микрофон не доступен: ' + micErr.message);
       }
 
-      // 2. Get conversation token for WebRTC
-      console.log('[ElevenLabs] Fetching conversation token...');
+      // 2. Get token + agent_id from edge function
+      console.log('[EL] Fetching token + agent_id...');
       const { data, error: fnError } = await supabase.functions.invoke('elevenlabs-conversation-token');
-      console.log('[ElevenLabs] Token response:', data, fnError);
+      console.log('[EL] Token response:', data, fnError);
 
-      if (fnError || !data?.token) {
-        updateDebug({ token: 'FAIL', lastError: fnError?.message || 'No token received' });
-        throw new Error(fnError?.message || 'Не удалось получить conversation token');
-      }
+      const agentId = data?.agent_id;
+      const token = data?.token;
+      agentIdRef.current = agentId || null;
 
-      updateDebug({ token: 'OK', connectionType: 'webrtc' });
-
-      // 3. Start WebRTC session
-      console.log('[ElevenLabs] Starting WebRTC session...');
-      await conversation.startSession({
-        conversationToken: data.token,
-        connectionType: 'webrtc',
-      } as any);
-
-      // 4. Send menu context
-      if (!contextSent.current) {
-        setTimeout(() => {
-          try {
-            conversation.sendContextualUpdate(buildMenuContext());
-            contextSent.current = true;
-            console.log('[ElevenLabs] Menu context sent');
-          } catch (e) {
-            console.error('[ElevenLabs] Failed to send context:', e);
+      // 3. Try agentId first (public agent), then token (private agent)
+      if (agentId) {
+        console.log('[EL] Trying agentId connection...');
+        updateDebug({ connectionMode: 'agentId', token: token ? 'OK' : 'skipped' });
+        try {
+          await conversation.startSession({
+            agentId,
+          } as any);
+          updateDebug({ lastEventType: 'startSession(agentId)' });
+        } catch (agentIdErr: any) {
+          console.warn('[EL] agentId failed, trying token...', agentIdErr);
+          if (token) {
+            updateDebug({ connectionMode: 'token-webrtc', token: 'OK' });
+            await conversation.startSession({
+              conversationToken: token,
+            } as any);
+            updateDebug({ lastEventType: 'startSession(token)' });
+          } else {
+            throw agentIdErr;
           }
-        }, 1000);
+        }
+      } else if (token) {
+        console.log('[EL] Using token connection...');
+        updateDebug({ connectionMode: 'token-webrtc', token: 'OK' });
+        await conversation.startSession({
+          conversationToken: token,
+        } as any);
+        updateDebug({ lastEventType: 'startSession(token)' });
+      } else {
+        updateDebug({ token: 'FAIL', lastError: fnError?.message || 'No token/agent_id' });
+        throw new Error(fnError?.message || 'No token or agent_id received');
       }
+
+      // 4. Send context after 1s
+      setTimeout(sendContext, 1000);
+
+      // 5. Auto-fallback: if no events after 3s → websocket
+      if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+      fallbackTimerRef.current = setTimeout(() => {
+        if (!gotEventsRef.current) {
+          console.warn('[EL] No events after 3s, triggering WS fallback');
+          startWebSocketFallback();
+        }
+      }, 3000);
+
     } catch (e: any) {
-      console.error('[ElevenLabs] Start error:', e);
+      console.error('[EL] Start error:', e);
       setError(e.message || 'Ошибка подключения');
       updateDebug({ session: 'failed', lastError: e.message || 'Unknown' });
     } finally {
       setIsConnecting(false);
     }
-  }, [conversation, updateDebug]);
+  }, [conversation, updateDebug, sendContext, startWebSocketFallback]);
 
   const stop = useCallback(async () => {
+    if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
     await conversation.endSession();
     setTranscript('');
     setAgentText('');
   }, [conversation]);
 
   const isActive = conversation.status === 'connected';
+  const isSpeaking = conversation.isSpeaking;
 
   const statusDisplay = () => {
     if (isConnecting) return { text: 'Подключение...', color: 'text-yellow-600' };
     if (!isActive) return null;
-    if (conversation.isSpeaking) return { text: '🔊 Speaking — агент говорит', color: 'text-primary' };
-    return { text: '🎤 Listening — говорите...', color: 'text-green-600' };
+    if (isSpeaking) return { text: '🔊 Агент говорит', color: 'text-primary' };
+    return { text: '🎤 Говорите...', color: 'text-green-600' };
   };
-
   const status = statusDisplay();
 
   return (
@@ -216,16 +302,10 @@ const VoiceAssistant: React.FC = () => {
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-display text-lg font-semibold">🎙 Голосом</h3>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowDebug(!showDebug)}
-              className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground"
-              title="Debug панель"
-            >
+            <button onClick={() => setShowDebug(!showDebug)} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground" title="Debug">
               <Bug className="w-4 h-4" />
             </button>
-            <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
-              isActive ? 'bg-green-100 text-green-700' : 'bg-secondary text-muted-foreground'
-            }`}>
+            <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${isActive ? 'bg-green-100 text-green-700' : 'bg-secondary text-muted-foreground'}`}>
               {isConnecting ? 'Подключение...' : isActive ? 'Подключён' : 'Отключён'}
             </span>
           </div>
@@ -236,22 +316,18 @@ const VoiceAssistant: React.FC = () => {
         {/* Debug Panel */}
         <AnimatePresence>
           {showDebug && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mb-4 bg-secondary/50 rounded-xl p-3 text-xs font-mono space-y-1 border border-border/50"
-            >
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+              className="mb-4 bg-secondary/50 rounded-xl p-3 text-xs font-mono space-y-1 border border-border/50">
               <p className="font-semibold text-muted-foreground mb-1">🔧 Debug Panel</p>
+              <p>connectionMode: <span className="text-primary">{debug.connectionMode}</span></p>
               <p>token: <span className={debug.token === 'OK' ? 'text-green-600' : debug.token === 'FAIL' ? 'text-destructive' : 'text-muted-foreground'}>{debug.token}</span></p>
-              
-              <p>connectionType: <span className="text-primary">{debug.connectionType}</span></p>
               <p>micPermission: <span className={debug.micPermission === 'granted' ? 'text-green-600' : debug.micPermission === 'denied' ? 'text-destructive' : 'text-muted-foreground'}>{debug.micPermission}</span></p>
-              <p>audioTracksCount: {debug.audioTracksCount}</p>
-              <p>session: <span className={debug.session === 'started' ? 'text-green-600' : debug.session === 'failed' ? 'text-destructive' : 'text-muted-foreground'}>{debug.session}</span></p>
+              <p>audioTracks: {debug.audioTracksCount}</p>
+              <p>session: <span className={debug.session === 'started' || debug.session === 'fallback-ws' ? 'text-green-600' : debug.session === 'failed' ? 'text-destructive' : 'text-muted-foreground'}>{debug.session}</span></p>
               <p>status (SDK): {conversation.status}</p>
-              <p>isSpeaking: {String(conversation.isSpeaking)}</p>
-              <p>lastEventType: {debug.lastEventType || '—'}</p>
+              <p>isSpeaking: <span className={isSpeaking ? 'text-green-600 font-bold' : ''}>{String(isSpeaking)}</span></p>
+              <p>lastEventType: <span className="text-primary">{debug.lastEventType || '—'}</span></p>
+              <p>messageCount: {debug.messageCount} | audioEvents: {debug.audioEventCount}</p>
               {debug.lastError && <p>lastError: <span className="text-destructive">{debug.lastError}</span></p>}
             </motion.div>
           )}
@@ -260,10 +336,7 @@ const VoiceAssistant: React.FC = () => {
         {/* Status indicator */}
         {isActive && status && (
           <div className={`flex items-center gap-2 text-sm mb-3 ${status.color}`}>
-            {conversation.isSpeaking
-              ? <Volume2 className="w-4 h-4 animate-pulse" />
-              : <Mic className="w-4 h-4 animate-pulse" />
-            }
+            {isSpeaking ? <Volume2 className="w-4 h-4 animate-pulse" /> : <Mic className="w-4 h-4 animate-pulse" />}
             <span className="font-medium">{status.text}</span>
           </div>
         )}
