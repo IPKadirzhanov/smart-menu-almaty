@@ -82,6 +82,7 @@ const VoiceAssistant: React.FC = () => {
   const [showDebug, setShowDebug] = useState(false);
   const contextSent = useRef(false);
   const greetingSentRef = useRef(false);
+  const conversationRef = useRef<any>(null);
 
   const [debug, setDebug] = useState<DebugInfo>({
     token: 'pending',
@@ -120,6 +121,10 @@ const VoiceAssistant: React.FC = () => {
         title: action.title || 'Подобранное меню',
         variants,
       });
+      // Auto-end conversation after menu is ready
+      setTimeout(() => {
+        try { conversationRef.current?.endSession(); } catch {}
+      }, 500);
     }
   }, []);
 
@@ -212,6 +217,7 @@ const VoiceAssistant: React.FC = () => {
       updateDebug({ lastEventType: `debug:${typeof data === 'object' ? JSON.stringify(data).slice(0, 80) : data}` });
     }) as any,
   });
+  conversationRef.current = conversation;
 
   const start = useCallback(async () => {
     setIsConnecting(true);
@@ -385,7 +391,25 @@ const VoiceAssistant: React.FC = () => {
         </button>
       </div>
 
-      <MenuPickerModal payload={pickerPayload} onClose={() => setPickerPayload(null)} />
+      <MenuPickerModal
+        payload={pickerPayload}
+        onClose={() => setPickerPayload(null)}
+        onAskVoice={async (question: string) => {
+          // Quick voice Q&A: start session, send question, auto-end after response
+          try {
+            const { data } = await supabase.functions.invoke('elevenlabs-signed-url');
+            if (!data?.signed_url) return;
+            await navigator.mediaDevices.getUserMedia({ audio: true }).then(s => s.getTracks().forEach(t => t.stop()));
+            await conversationRef.current?.startSession({ signedUrl: data.signed_url } as any);
+            setTimeout(() => {
+              conversationRef.current?.sendContextualUpdate(buildMenuContext());
+              conversationRef.current?.sendUserMessage(question);
+            }, 500);
+          } catch (e) {
+            console.error('[EL] Modal voice error:', e);
+          }
+        }}
+      />
     </>
   );
 };
