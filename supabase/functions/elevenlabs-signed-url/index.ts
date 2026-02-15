@@ -28,28 +28,40 @@ serve(async (req) => {
   }
 
   try {
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${ELEVENLABS_AGENT_ID}`,
-      {
-        headers: {
-          'xi-api-key': ELEVENLABS_API_KEY,
-        },
-      }
-    );
+    // Fetch both signed_url (WebSocket) and token (WebRTC) for flexibility
+    const [signedUrlRes, tokenRes] = await Promise.all([
+      fetch(
+        `https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${ELEVENLABS_AGENT_ID}`,
+        { headers: { 'xi-api-key': ELEVENLABS_API_KEY } }
+      ),
+      fetch(
+        `https://api.elevenlabs.io/v1/convai/conversation/token?agent_id=${ELEVENLABS_AGENT_ID}`,
+        { headers: { 'xi-api-key': ELEVENLABS_API_KEY } }
+      ),
+    ]);
 
-    if (!response.ok) {
-      const errorBody = await response.text();
-      throw new Error(`ElevenLabs API error [${response.status}]: ${errorBody}`);
+    if (!signedUrlRes.ok) {
+      const errorBody = await signedUrlRes.text();
+      throw new Error(`ElevenLabs signed-url error [${signedUrlRes.status}]: ${errorBody}`);
     }
 
-    const data = await response.json();
+    if (!tokenRes.ok) {
+      const errorBody = await tokenRes.text();
+      throw new Error(`ElevenLabs token error [${tokenRes.status}]: ${errorBody}`);
+    }
 
-    return new Response(JSON.stringify({ signed_url: data.signed_url }), {
+    const signedUrlData = await signedUrlRes.json();
+    const tokenData = await tokenRes.json();
+
+    return new Response(JSON.stringify({
+      signed_url: signedUrlData.signed_url,
+      token: tokenData.token,
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    console.error('Error getting signed URL:', errorMessage);
+    console.error('Error getting credentials:', errorMessage);
     return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
