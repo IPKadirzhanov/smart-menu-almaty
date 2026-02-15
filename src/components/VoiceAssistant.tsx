@@ -69,6 +69,8 @@ interface DebugInfo {
   messageCount: number;
   audioEventCount: number;
   isSpeaking: boolean;
+  lastRawMessage: string;
+  greetingSent: boolean;
 }
 
 const VoiceAssistant: React.FC = () => {
@@ -80,6 +82,8 @@ const VoiceAssistant: React.FC = () => {
   const [showDebug, setShowDebug] = useState(false);
   const contextSent = useRef(false);
   const gotEventsRef = useRef(false);
+  const greetingSentRef = useRef(false);
+  const gotAgentTextRef = useRef(false);
   const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const agentIdRef = useRef<string | null>(null);
 
@@ -94,6 +98,8 @@ const VoiceAssistant: React.FC = () => {
     messageCount: 0,
     audioEventCount: 0,
     isSpeaking: false,
+    lastRawMessage: '',
+    greetingSent: false,
   });
 
   const updateDebug = useCallback((partial: Partial<DebugInfo>) => {
@@ -101,6 +107,8 @@ const VoiceAssistant: React.FC = () => {
   }, []);
 
   const processAgentResponse = useCallback((text: string) => {
+    if (!text) return;
+    gotAgentTextRef.current = true;
     setAgentText(text);
     const action = extractUIAction(text);
     if (action && action.action === 'OPEN_MENU_PICKER') {
@@ -126,8 +134,10 @@ const VoiceAssistant: React.FC = () => {
     onDisconnect: () => {
       console.log('[EL] Disconnected');
       contextSent.current = false;
+      greetingSentRef.current = false;
+      gotAgentTextRef.current = false;
       markEvent('onDisconnect');
-      updateDebug({ session: 'idle', isSpeaking: false });
+      updateDebug({ session: 'idle', isSpeaking: false, greetingSent: false });
     },
     onError: (err) => {
       console.error('[EL] Error:', err);
@@ -137,23 +147,46 @@ const VoiceAssistant: React.FC = () => {
       updateDebug({ lastError: msg });
     },
     onMessage: (message: any) => {
-      console.log('[EL] Message:', message.type, message);
-      markEvent(`msg:${message.type}`);
-      setDebug(prev => ({ ...prev, messageCount: prev.messageCount + 1 }));
+      console.log('[EL] Message RAW:', JSON.stringify(message).slice(0, 500));
+      markEvent(`msg:${message.type || 'unknown'}`);
+      setDebug(prev => ({
+        ...prev,
+        messageCount: prev.messageCount + 1,
+        lastRawMessage: JSON.stringify(message).slice(0, 200),
+      }));
 
+      // Extract text from any possible shape
       if (message.type === 'user_transcript') {
         const text = message.user_transcription_event?.user_transcript || '';
-        setTranscript(text);
+        if (text) setTranscript(text);
       }
       if (message.type === 'agent_response') {
         const response = message.agent_response_event?.agent_response || '';
         processAgentResponse(response);
       }
+
+      // Generic fallback text extraction
+      const fallbackText = message?.message ?? message?.text ?? message?.transcript ?? 
+        message?.data?.text ?? message?.content?.[0]?.text ?? '';
+      if (fallbackText && message.type !== 'user_transcript' && message.type !== 'agent_response') {
+        console.log('[EL] Fallback text extracted:', fallbackText);
+        processAgentResponse(fallbackText);
+      }
     },
+    onModeChange: ((mode: any) => {
+      console.log('[EL] ModeChange:', mode);
+      markEvent(`mode:${JSON.stringify(mode)}`);
+      const speaking = mode?.mode === 'speaking' || mode === 'speaking';
+      updateDebug({ isSpeaking: speaking });
+    }) as any,
+    onStatusChange: ((status: any) => {
+      console.log('[EL] StatusChange:', status);
+      markEvent(`status:${JSON.stringify(status)}`);
+    }) as any,
   });
 
-  // Send context after connection
-  const sendContext = useCallback(() => {
+  // Send greeting + context after connection
+  const sendGreetingAndContext = useCallback(() => {
     if (!contextSent.current) {
       try {
         conversation.sendContextualUpdate(buildMenuContext());
@@ -163,13 +196,39 @@ const VoiceAssistant: React.FC = () => {
         console.error('[EL] Context send failed:', e);
       }
     }
-  }, [conversation]);
+
+    // Send initial message to trigger agent's first response
+    if (!greetingSentRef.current) {
+      try {
+        setTimeout(() => {
+          conversation.sendUserMessage('Привет');
+          greetingSentRef.current = true;
+          updateDebug({ greetingSent: true });
+          console.log('[EL] Greeting "Привет" sent');
+
+          // Start fallback timer AFTER greeting is sent
+          if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
+          fallbackTimerRef.current = setTimeout(() => {
+            if (!gotAgentTextRef.current) {
+              console.warn('[EL] No agent response 3s after greeting, triggering WS fallback');
+              startWebSocketFallback();
+            }
+          }, 3000);
+        }, 500);
+      } catch (e) {
+        console.error('[EL] Greeting send failed:', e);
+      }
+    }
+  }, [conversation, updateDebug]);
 
   // Fallback to websocket
   const startWebSocketFallback = useCallback(async () => {
     console.log('[EL] Fallback → websocket');
     updateDebug({ session: 'fallback-ws', connectionMode: 'websocket', lastEventType: 'fallback→ws' });
     setError('');
+    contextSent.current = false;
+    greetingSentRef.current = false;
+    gotAgentTextRef.current = false;
 
     try {
       await conversation.endSession();
@@ -185,22 +244,26 @@ const VoiceAssistant: React.FC = () => {
         signedUrl: data.signed_url,
       } as any);
 
-      setTimeout(sendContext, 1000);
+      setTimeout(() => sendGreetingAndContext(), 1000);
     } catch (e: any) {
       console.error('[EL] WS fallback failed:', e);
       setError('Fallback WS failed: ' + (e.message || 'Unknown'));
       updateDebug({ session: 'failed', lastError: e.message || 'Unknown' });
     }
-  }, [conversation, sendContext, updateDebug]);
+  }, [conversation, sendGreetingAndContext, updateDebug]);
 
   const start = useCallback(async () => {
     setIsConnecting(true);
     setError('');
     gotEventsRef.current = false;
+    gotAgentTextRef.current = false;
+    greetingSentRef.current = false;
+    contextSent.current = false;
     updateDebug({
       session: 'starting', lastError: '', token: 'pending',
       micPermission: 'pending', messageCount: 0, audioEventCount: 0,
       connectionMode: 'none', isSpeaking: false, lastEventType: '',
+      lastRawMessage: '', greetingSent: false,
     });
 
     try {
@@ -257,17 +320,8 @@ const VoiceAssistant: React.FC = () => {
         throw new Error(fnError?.message || 'No token or agent_id received');
       }
 
-      // 4. Send context after 1s
-      setTimeout(sendContext, 1000);
-
-      // 5. Auto-fallback: if no events after 3s → websocket
-      if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
-      fallbackTimerRef.current = setTimeout(() => {
-        if (!gotEventsRef.current) {
-          console.warn('[EL] No events after 3s, triggering WS fallback');
-          startWebSocketFallback();
-        }
-      }, 3000);
+      // 4. Send context + greeting after 1s (gives onConnect time to fire)
+      setTimeout(() => sendGreetingAndContext(), 1000);
 
     } catch (e: any) {
       console.error('[EL] Start error:', e);
@@ -276,7 +330,7 @@ const VoiceAssistant: React.FC = () => {
     } finally {
       setIsConnecting(false);
     }
-  }, [conversation, updateDebug, sendContext, startWebSocketFallback]);
+  }, [conversation, updateDebug, sendGreetingAndContext]);
 
   const stop = useCallback(async () => {
     if (fallbackTimerRef.current) clearTimeout(fallbackTimerRef.current);
@@ -326,8 +380,10 @@ const VoiceAssistant: React.FC = () => {
               <p>session: <span className={debug.session === 'started' || debug.session === 'fallback-ws' ? 'text-green-600' : debug.session === 'failed' ? 'text-destructive' : 'text-muted-foreground'}>{debug.session}</span></p>
               <p>status (SDK): {conversation.status}</p>
               <p>isSpeaking: <span className={isSpeaking ? 'text-green-600 font-bold' : ''}>{String(isSpeaking)}</span></p>
+              <p>greetingSent: <span className={debug.greetingSent ? 'text-green-600' : 'text-muted-foreground'}>{String(debug.greetingSent)}</span></p>
               <p>lastEventType: <span className="text-primary">{debug.lastEventType || '—'}</span></p>
               <p>messageCount: {debug.messageCount} | audioEvents: {debug.audioEventCount}</p>
+              {debug.lastRawMessage && <p className="break-all">lastRaw: <span className="text-muted-foreground">{debug.lastRawMessage}</span></p>}
               {debug.lastError && <p>lastError: <span className="text-destructive">{debug.lastError}</span></p>}
             </motion.div>
           )}
