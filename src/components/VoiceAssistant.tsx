@@ -59,7 +59,6 @@ ${lines}
 }
 
 interface DebugInfo {
-  signedUrl: 'pending' | 'OK' | 'FAIL';
   token: 'pending' | 'OK' | 'FAIL';
   micPermission: 'pending' | 'granted' | 'denied';
   connectionType: string;
@@ -79,7 +78,6 @@ const VoiceAssistant: React.FC = () => {
   const contextSent = useRef(false);
 
   const [debug, setDebug] = useState<DebugInfo>({
-    signedUrl: 'pending',
     token: 'pending',
     micPermission: 'pending',
     connectionType: 'webrtc',
@@ -139,7 +137,7 @@ const VoiceAssistant: React.FC = () => {
   const start = useCallback(async () => {
     setIsConnecting(true);
     setError('');
-    updateDebug({ session: 'starting', lastError: '', signedUrl: 'pending', token: 'pending', micPermission: 'pending' });
+    updateDebug({ session: 'starting', lastError: '', token: 'pending', micPermission: 'pending' });
 
     try {
       // 1. Request microphone
@@ -155,40 +153,24 @@ const VoiceAssistant: React.FC = () => {
         throw new Error('Микрофон не доступен: ' + micErr.message);
       }
 
-      // 2. Get credentials from edge function
-      console.log('[ElevenLabs] Fetching credentials...');
-      const { data, error: fnError } = await supabase.functions.invoke('elevenlabs-signed-url');
-      console.log('[ElevenLabs] Credentials response:', data, fnError);
+      // 2. Get conversation token for WebRTC
+      console.log('[ElevenLabs] Fetching conversation token...');
+      const { data, error: fnError } = await supabase.functions.invoke('elevenlabs-conversation-token');
+      console.log('[ElevenLabs] Token response:', data, fnError);
 
-      if (fnError || !data) {
-        updateDebug({ signedUrl: 'FAIL', token: 'FAIL', lastError: fnError?.message || 'No data' });
-        throw new Error(fnError?.message || 'Не удалось получить credentials');
+      if (fnError || !data?.token) {
+        updateDebug({ token: 'FAIL', lastError: fnError?.message || 'No token received' });
+        throw new Error(fnError?.message || 'Не удалось получить conversation token');
       }
 
-      const hasToken = !!data.token;
-      const hasSignedUrl = !!data.signed_url;
-      updateDebug({
-        token: hasToken ? 'OK' : 'FAIL',
-        signedUrl: hasSignedUrl ? 'OK' : 'FAIL',
-      });
+      updateDebug({ token: 'OK', connectionType: 'webrtc' });
 
-      // 3. Start session - prefer WebRTC (token), fallback to WebSocket (signed_url)
-      if (hasToken) {
-        console.log('[ElevenLabs] Starting WebRTC session with token...');
-        updateDebug({ connectionType: 'webrtc' });
-        await conversation.startSession({
-          conversationToken: data.token,
-          connectionType: 'webrtc',
-        } as any);
-      } else if (hasSignedUrl) {
-        console.log('[ElevenLabs] Falling back to WebSocket with signed_url...');
-        updateDebug({ connectionType: 'websocket' });
-        await conversation.startSession({
-          signedUrl: data.signed_url,
-        });
-      } else {
-        throw new Error('Нет ни token, ни signed_url в ответе');
-      }
+      // 3. Start WebRTC session
+      console.log('[ElevenLabs] Starting WebRTC session...');
+      await conversation.startSession({
+        conversationToken: data.token,
+        connectionType: 'webrtc',
+      } as any);
 
       // 4. Send menu context
       if (!contextSent.current) {
@@ -262,7 +244,7 @@ const VoiceAssistant: React.FC = () => {
             >
               <p className="font-semibold text-muted-foreground mb-1">🔧 Debug Panel</p>
               <p>token: <span className={debug.token === 'OK' ? 'text-green-600' : debug.token === 'FAIL' ? 'text-destructive' : 'text-muted-foreground'}>{debug.token}</span></p>
-              <p>signedUrl: <span className={debug.signedUrl === 'OK' ? 'text-green-600' : debug.signedUrl === 'FAIL' ? 'text-destructive' : 'text-muted-foreground'}>{debug.signedUrl}</span></p>
+              
               <p>connectionType: <span className="text-primary">{debug.connectionType}</span></p>
               <p>micPermission: <span className={debug.micPermission === 'granted' ? 'text-green-600' : debug.micPermission === 'denied' ? 'text-destructive' : 'text-muted-foreground'}>{debug.micPermission}</span></p>
               <p>audioTracksCount: {debug.audioTracksCount}</p>
