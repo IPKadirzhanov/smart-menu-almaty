@@ -1,15 +1,65 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { useConversation } from '@elevenlabs/react';
 import { Mic, MicOff, Volume2, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { extractUIAction } from '@/lib/uiAction';
 import MenuPickerModal, { MenuPickerPayload } from '@/components/MenuPickerModal';
+import { menuItems, categoryLabels } from '@/data/menu';
 
 const statusLabels: Record<string, string> = {
   connected: 'Подключён',
   disconnected: 'Отключён',
 };
+
+function buildMenuContext(): string {
+  const grouped: Record<string, string[]> = {};
+  menuItems.forEach(item => {
+    const cat = categoryLabels[item.category] || item.category;
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(`${item.name} (id:${item.id}, ${item.priceKZT}₸)`);
+  });
+  const lines = Object.entries(grouped).map(([cat, items]) => `${cat}: ${items.join(', ')}`).join('\n');
+
+  return `Ты — голосовой помощник ресторана SmartMenu в Алматы. Помогаешь гостям подобрать заказ по бюджету и предпочтениям.
+
+МЕНЮ РЕСТОРАНА:
+${lines}
+
+ВАЖНО: Когда пользователь просит подобрать меню (указывает бюджет, количество людей, предпочтения), ты ДОЛЖЕН в своём ответе включить блок:
+
+<UI_ACTION>
+{
+  "action": "OPEN_MENU_PICKER",
+  "title": "Подбор меню на [бюджет] для [кол-во] человек",
+  "variants": [
+    {
+      "name": "Вариант A — Сбалансированный",
+      "items": [{"id": "h1", "name": "Классический кальян", "price": 7000}, ...],
+      "total": 25000
+    },
+    {
+      "name": "Вариант B — Сытный",
+      "items": [...],
+      "total": 28000
+    },
+    {
+      "name": "Вариант C — Лёгкий",
+      "items": [...],
+      "total": 22000
+    }
+  ]
+}
+</UI_ACTION>
+
+Правила подбора:
+- Создавай ровно 3 варианта (Сбалансированный, Сытный, Лёгкий)
+- Итого каждого варианта должно быть 80-100% от бюджета
+- Используй ТОЛЬКО id из меню выше
+- Учитывай пожелания (халяль, без алкоголя, веган и т.д.)
+- Отвечай на русском языке
+- Блок <UI_ACTION> автоматически откроет модалку выбора на экране пользователя`;
+}
 
 const VoiceAssistant: React.FC = () => {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -17,6 +67,7 @@ const VoiceAssistant: React.FC = () => {
   const [agentText, setAgentText] = useState('');
   const [error, setError] = useState('');
   const [pickerPayload, setPickerPayload] = useState<MenuPickerPayload | null>(null);
+  const contextSent = useRef(false);
 
   const processAgentResponse = useCallback((text: string) => {
     setAgentText(text);
@@ -30,8 +81,12 @@ const VoiceAssistant: React.FC = () => {
   }, []);
 
   const conversation = useConversation({
-    onConnect: () => setError(''),
-    onDisconnect: () => {},
+    onConnect: () => {
+      setError('');
+    },
+    onDisconnect: () => {
+      contextSent.current = false;
+    },
     onError: (err) => setError(String(err)),
     onMessage: (message: any) => {
       if (message.type === 'user_transcript') {
@@ -58,6 +113,14 @@ const VoiceAssistant: React.FC = () => {
       await conversation.startSession({
         signedUrl: data.signed_url,
       });
+
+      // Send menu context after connection
+      if (!contextSent.current) {
+        setTimeout(() => {
+          conversation.sendContextualUpdate(buildMenuContext());
+          contextSent.current = true;
+        }, 500);
+      }
     } catch (e: any) {
       setError(e.message || 'Ошибка подключения');
     } finally {
