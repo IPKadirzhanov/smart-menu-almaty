@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useOrders, Order } from '@/context/OrderContext';
 import { formatPrice } from '@/lib/aiLogic';
 import { motion } from 'framer-motion';
-import { Lock, Clock, ChefHat, CheckCircle } from 'lucide-react';
-
-const ADMIN_PASSWORD = 'admin123';
+import { Lock, Clock, ChefHat, CheckCircle, LogOut } from 'lucide-react';
+import AdminLoginModal from '@/components/AdminLoginModal';
 
 const statusConfig: Record<Order['status'], { label: string; color: string; icon: React.ElementType }> = {
   new: { label: 'Новый', color: 'bg-blue-100 text-blue-700', icon: Clock },
@@ -19,52 +19,54 @@ const nextStatus: Record<Order['status'], Order['status'] | null> = {
 };
 
 const AdminPage: React.FC = () => {
-  const [authed, setAuthed] = useState(false);
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const navigate = useNavigate();
+  const isAuthed = sessionStorage.getItem('admin_authed') === '1';
+  const [showLogin, setShowLogin] = useState(false);
   const { orders, updateStatus } = useOrders();
 
-  const login = () => {
-    if (password === ADMIN_PASSWORD) {
-      setAuthed(true);
-      setError('');
-    } else {
-      setError('Неверный пароль');
-    }
+  const handleLogout = () => {
+    sessionStorage.removeItem('admin_authed');
+    navigate('/');
   };
 
-  if (!authed) {
+  if (!isAuthed) {
     return (
-      <main className="pt-20 pb-12">
-        <div className="page-container max-w-sm py-20">
-          <div className="glass-card rounded-2xl p-8 text-center">
-            <Lock className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
-            <h1 className="text-xl font-display font-bold mb-4">Админ-панель</h1>
-            <input
-              type="password"
-              placeholder="Пароль"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && login()}
-              className="w-full px-4 py-3 rounded-xl bg-secondary text-sm outline-none mb-3 focus:ring-2 focus:ring-primary/20"
-            />
-            {error && <p className="text-sm text-destructive mb-3">{error}</p>}
-            <button onClick={login} className="w-full py-3 rounded-xl gradient-primary text-primary-foreground font-semibold text-sm">
-              Войти
-            </button>
-            <p className="text-xs text-muted-foreground mt-3">Демо-пароль: admin123</p>
+      <>
+        <main className="pt-20 pb-12">
+          <div className="page-container max-w-sm py-20">
+            <div className="glass-card rounded-2xl p-8 text-center">
+              <Lock className="w-10 h-10 text-muted-foreground mx-auto mb-4" />
+              <h1 className="text-xl font-display font-bold mb-4">Доступ запрещён</h1>
+              <p className="text-sm text-muted-foreground mb-4">Для доступа необходима авторизация</p>
+              <button
+                onClick={() => setShowLogin(true)}
+                className="w-full py-3 rounded-xl gradient-primary text-primary-foreground font-semibold text-sm"
+              >
+                Войти
+              </button>
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+        <AdminLoginModal open={showLogin} onClose={() => setShowLogin(false)} />
+      </>
     );
   }
 
   return (
     <main className="pt-20 pb-12">
       <div className="page-container">
-        <motion.h1 initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-3xl font-display font-bold mb-2">
-          Заказы
-        </motion.h1>
+        <div className="flex items-center justify-between mb-2">
+          <motion.h1 initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-3xl font-display font-bold">
+            Заказы
+          </motion.h1>
+          <button
+            onClick={handleLogout}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl glass-button text-sm font-medium text-destructive"
+          >
+            <LogOut className="w-4 h-4" />
+            Выйти
+          </button>
+        </div>
         <p className="text-sm text-muted-foreground mb-6">Обновляется каждые 2 сек.</p>
 
         {orders.length === 0 ? (
