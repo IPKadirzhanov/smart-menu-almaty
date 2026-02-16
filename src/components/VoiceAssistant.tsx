@@ -73,7 +73,11 @@ interface DebugInfo {
   greetingSent: boolean;
 }
 
-const VoiceAssistant: React.FC = () => {
+interface VoiceAssistantProps {
+  onOpenFoodInfo?: () => void;
+}
+
+const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onOpenFoodInfo }) => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [agentText, setAgentText] = useState('');
@@ -394,21 +398,11 @@ const VoiceAssistant: React.FC = () => {
       <MenuPickerModal
         payload={pickerPayload}
         onClose={() => setPickerPayload(null)}
-        onAskVoice={async (question: string) => {
-          // Quick voice Q&A: start session, send question, auto-end after response
-          try {
-            const { data } = await supabase.functions.invoke('elevenlabs-signed-url');
-            if (!data?.signed_url) return;
-            await navigator.mediaDevices.getUserMedia({ audio: true }).then(s => s.getTracks().forEach(t => t.stop()));
-            await conversationRef.current?.startSession({ signedUrl: data.signed_url } as any);
-            setTimeout(() => {
-              conversationRef.current?.sendContextualUpdate(buildMenuContext());
-              conversationRef.current?.sendUserMessage(question);
-            }, 500);
-          } catch (e) {
-            console.error('[EL] Modal voice error:', e);
-          }
-        }}
+        onOpenFoodInfo={onOpenFoodInfo ? () => {
+          // Stop main agent first if active, then open food info
+          try { conversationRef.current?.endSession(); } catch {}
+          onOpenFoodInfo();
+        } : undefined}
       />
     </>
   );

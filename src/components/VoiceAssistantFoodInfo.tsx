@@ -4,7 +4,6 @@ import React, { useState, useCallback, useRef } from 'react';
 import { useConversation } from '@elevenlabs/react';
 import { Mic, MicOff, Volume2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '@/integrations/supabase/client';
 import { menuItems, categoryLabels } from '@/data/menu';
 
 function buildFoodInfoContext(): string {
@@ -16,7 +15,26 @@ function buildFoodInfoContext(): string {
   return `Справочник меню ресторана SmartMenu:\n${lines}`;
 }
 
-const END_PHRASES = ['нет', 'не надо', 'всё', 'все', 'спасибо', 'понятно', 'хватит', 'до свидания', 'досвидания', 'пока'];
+function normalizeText(text: string): string {
+  return text
+    .toLowerCase()
+    .trim()
+    .replace(/ё/g, 'е')
+    .replace(/[.,!?;:…—–\-"""''«»()\[\]{}]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const END_TRIGGERS = [
+  'нет', 'не надо', 'все', 'все', 'спасибо', 'понятно', 'хватит',
+  'до свидания', 'досвидания', 'ок', 'окей', 'неа', 'закончили', 'достаточно', 'пока'
+];
+
+function isEndPhrase(raw: string): boolean {
+  const norm = normalizeText(raw);
+  if (!norm) return false;
+  return END_TRIGGERS.some(t => norm === t || norm.startsWith(t + ' ') || norm.startsWith(t + ','));
+}
 
 interface Props {
   open: boolean;
@@ -30,19 +48,25 @@ const VoiceAssistantFoodInfo: React.FC<Props> = ({ open, onClose }) => {
   const [error, setError] = useState('');
   const contextSent = useRef(false);
   const conversationRef = useRef<any>(null);
+  const closingRef = useRef(false);
 
   const handleClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
     try { conversationRef.current?.endSession(); } catch {}
     setTranscript('');
     setAgentText('');
     setError('');
     contextSent.current = false;
     onClose();
+    setTimeout(() => { closingRef.current = false; }, 300);
   }, [onClose]);
 
-  const checkEndPhrase = useCallback((text: string) => {
-    const lower = text.toLowerCase().trim();
-    if (END_PHRASES.some(p => lower === p || lower.startsWith(p))) {
+  const handleUserText = useCallback((text: string) => {
+    if (!text) return;
+    setTranscript(text);
+    if (isEndPhrase(text)) {
+      console.log('[EL-FoodInfo] End phrase detected:', text);
       setTimeout(() => handleClose(), 600);
     }
   }, [handleClose]);
@@ -70,16 +94,27 @@ const VoiceAssistantFoodInfo: React.FC<Props> = ({ open, onClose }) => {
       setError(msg);
     },
     onMessage: (message: any) => {
+      console.log('[EL-FoodInfo] Message:', JSON.stringify(message).slice(0, 300));
+
+      // Try all known shapes for user transcript
       if (message.type === 'user_transcript') {
         const text = message.user_transcription_event?.user_transcript || '';
-        if (text) {
-          setTranscript(text);
-          checkEndPhrase(text);
-        }
+        if (text) handleUserText(text);
       }
+      if (message.role === 'user' && message.message) {
+        handleUserText(message.message);
+      }
+      if (message.source === 'user' && (message.message || message.text || message.transcript)) {
+        handleUserText(message.message || message.text || message.transcript);
+      }
+
+      // Agent response
       if (message.type === 'agent_response') {
         const response = message.agent_response_event?.agent_response || '';
         if (response) setAgentText(response);
+      }
+      if (message.role === 'assistant' && message.message) {
+        setAgentText(message.message);
       }
     },
   });
@@ -138,7 +173,7 @@ const VoiceAssistantFoodInfo: React.FC<Props> = ({ open, onClose }) => {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+        className="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
         onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
       >
         <motion.div

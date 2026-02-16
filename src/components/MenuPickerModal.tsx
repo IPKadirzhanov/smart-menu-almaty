@@ -1,6 +1,6 @@
-import React, { useState, useCallback } from 'react';
+import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ShoppingCart, Mic, MicOff, Loader2 } from 'lucide-react';
+import { X, ShoppingCart, Info } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { menuItems } from '@/data/menu';
 import { formatPrice } from '@/lib/aiLogic';
@@ -19,13 +19,11 @@ export interface MenuPickerPayload {
 interface MenuPickerModalProps {
   payload: MenuPickerPayload | null;
   onClose: () => void;
-  onAskVoice?: (question: string) => Promise<void>;
+  onOpenFoodInfo?: () => void;
 }
 
-const MenuPickerModal: React.FC<MenuPickerModalProps> = ({ payload, onClose, onAskVoice }) => {
+const MenuPickerModal: React.FC<MenuPickerModalProps> = ({ payload, onClose, onOpenFoodInfo }) => {
   const { addItem } = useCart();
-  const [isListening, setIsListening] = useState(false);
-  const [voiceStatus, setVoiceStatus] = useState('');
 
   if (!payload) return null;
 
@@ -35,25 +33,6 @@ const MenuPickerModal: React.FC<MenuPickerModalProps> = ({ payload, onClose, onA
       if (found) addItem(found);
     });
     onClose();
-  };
-
-  const handleVoiceAsk = async () => {
-    if (!onAskVoice) return;
-    if (isListening) return;
-    setIsListening(true);
-    setVoiceStatus('Слушаю...');
-    try {
-      await onAskVoice('Расскажи подробнее о составе блюд в подборке');
-      setVoiceStatus('Агент отвечает...');
-      // Auto-reset after 15s
-      setTimeout(() => {
-        setIsListening(false);
-        setVoiceStatus('');
-      }, 15000);
-    } catch {
-      setVoiceStatus('Ошибка');
-      setIsListening(false);
-    }
   };
 
   return (
@@ -106,23 +85,14 @@ const MenuPickerModal: React.FC<MenuPickerModalProps> = ({ payload, onClose, onA
               ))}
             </div>
 
-            {/* Voice ask button */}
-            {onAskVoice && (
+            {/* Ask about dish button */}
+            {onOpenFoodInfo && (
               <div className="mt-4 pt-4 border-t border-border/50">
                 <button
-                  onClick={handleVoiceAsk}
-                  disabled={isListening}
-                  className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all ${
-                    isListening
-                      ? 'bg-primary/10 text-primary'
-                      : 'bg-secondary hover:bg-secondary/80 text-foreground'
-                  }`}
+                  onClick={onOpenFoodInfo}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all bg-secondary hover:bg-secondary/80 text-foreground"
                 >
-                  {isListening ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" /> {voiceStatus}</>
-                  ) : (
-                    <><Mic className="w-4 h-4" /> Спросить голосом о составе</>
-                  )}
+                  <Info className="w-4 h-4" /> Спросить голосом о составе
                 </button>
               </div>
             )}
