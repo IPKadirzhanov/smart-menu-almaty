@@ -4,7 +4,7 @@ import { useCart } from '@/context/CartContext';
 import { MenuItem, Tag } from '@/data/menu';
 import ReplacementModal from '@/components/ReplacementModal';
 import VoiceAssistant from '@/components/VoiceAssistant';
-import VoiceAssistantFoodInfo from '@/components/VoiceAssistantFoodInfo';
+// VoiceAssistantFoodInfo is now inline inside MenuPickerModal
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Sparkles, ShoppingCart, ArrowRightLeft, Mic } from 'lucide-react';
 
@@ -22,7 +22,7 @@ const AIPage: React.FC = () => {
   const [replaceItem, setReplaceItem] = useState<MenuItem | null>(null);
   const [replaceSetIdx, setReplaceSetIdx] = useState<number>(0);
   const [showVoice, setShowVoice] = useState(false);
-  const [showFoodInfo, setShowFoodInfo] = useState(false);
+  
   const { addItem } = useCart();
 
   const handleSend = () => {
@@ -85,7 +85,7 @@ const AIPage: React.FC = () => {
           <AnimatePresence>
             {showVoice && (
               <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="mt-3">
-                <VoiceAssistant onOpenFoodInfo={() => setShowFoodInfo(true)} />
+                <VoiceAssistant />
               </motion.div>
             )}
           </AnimatePresence>
@@ -180,7 +180,7 @@ const AIPage: React.FC = () => {
         />
       )}
 
-      <VoiceAssistantFoodInfo open={showFoodInfo} onClose={() => setShowFoodInfo(false)} />
+      
     </main>
   );
 };

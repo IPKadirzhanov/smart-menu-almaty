@@ -73,11 +73,7 @@ interface DebugInfo {
   greetingSent: boolean;
 }
 
-interface VoiceAssistantProps {
-  onOpenFoodInfo?: () => void;
-}
-
-const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onOpenFoodInfo }) => {
+const VoiceAssistant: React.FC = () => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [agentText, setAgentText] = useState('');
@@ -398,11 +394,6 @@ const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ onOpenFoodInfo }) => {
       <MenuPickerModal
         payload={pickerPayload}
         onClose={() => setPickerPayload(null)}
-        onOpenFoodInfo={onOpenFoodInfo ? () => {
-          // Stop main agent first if active, then open food info
-          try { conversationRef.current?.endSession(); } catch {}
-          onOpenFoodInfo();
-        } : undefined}
       />
     </>
   );
