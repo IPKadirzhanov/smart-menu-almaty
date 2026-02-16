@@ -11,24 +11,21 @@ serve(async (req) => {
   }
 
   const ELEVENLABS_API_KEY = Deno.env.get('ELEVENLABS_API_KEY');
-  const ELEVENLABS_AGENT_ID = Deno.env.get('ELEVENLABS_AGENT_ID');
-
-  if (!ELEVENLABS_API_KEY) {
-    return new Response(JSON.stringify({ error: 'ELEVENLABS_API_KEY not configured' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
+  // Determine which agent to use based on query param
+  const url = new URL(req.url);
+  const mode = url.searchParams.get('mode');
+  const ELEVENLABS_AGENT_ID = mode === 'foodinfo'
+    ? Deno.env.get('ELEVENLABS_AGENT_ID_FOODINFO')
+    : Deno.env.get('ELEVENLABS_AGENT_ID');
 
   if (!ELEVENLABS_AGENT_ID) {
-    return new Response(JSON.stringify({ error: 'ELEVENLABS_AGENT_ID not configured' }), {
+    return new Response(JSON.stringify({ error: `Agent ID not configured for mode: ${mode || 'default'}` }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 
   try {
-    // Fetch both signed_url (WebSocket) and token (WebRTC) for flexibility
     const [signedUrlRes, tokenRes] = await Promise.all([
       fetch(
         `https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=${ELEVENLABS_AGENT_ID}`,
