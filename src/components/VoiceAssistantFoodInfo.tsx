@@ -49,27 +49,25 @@ const VoiceAssistantFoodInfo: React.FC<Props> = ({ open, onClose }) => {
   const contextSent = useRef(false);
   const conversationRef = useRef<any>(null);
   const closingRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   const handleClose = useCallback(() => {
     if (closingRef.current) return;
     closingRef.current = true;
+    console.log('[EL-FoodInfo] handleClose triggered');
     try { conversationRef.current?.endSession(); } catch {}
     setTranscript('');
     setAgentText('');
     setError('');
     contextSent.current = false;
-    onClose();
+    onCloseRef.current();
     setTimeout(() => { closingRef.current = false; }, 300);
-  }, [onClose]);
+  }, []);
 
-  const handleUserText = useCallback((text: string) => {
-    if (!text) return;
-    setTranscript(text);
-    if (isEndPhrase(text)) {
-      console.log('[EL-FoodInfo] End phrase detected:', text);
-      setTimeout(() => handleClose(), 600);
-    }
-  }, [handleClose]);
+  // Use ref so onMessage always calls the latest version
+  const handleCloseRef = useRef(handleClose);
+  handleCloseRef.current = handleClose;
 
   const conversation = useConversation({
     onConnect: () => {
@@ -96,16 +94,26 @@ const VoiceAssistantFoodInfo: React.FC<Props> = ({ open, onClose }) => {
     onMessage: (message: any) => {
       console.log('[EL-FoodInfo] Message:', JSON.stringify(message).slice(0, 300));
 
+      const checkAndClose = (text: string) => {
+        if (!text) return;
+        setTranscript(text);
+        console.log('[EL-FoodInfo] User text received:', text);
+        if (isEndPhrase(text)) {
+          console.log('[EL-FoodInfo] End phrase detected:', text);
+          setTimeout(() => handleCloseRef.current(), 600);
+        }
+      };
+
       // Try all known shapes for user transcript
       if (message.type === 'user_transcript') {
         const text = message.user_transcription_event?.user_transcript || '';
-        if (text) handleUserText(text);
+        if (text) checkAndClose(text);
       }
       if (message.role === 'user' && message.message) {
-        handleUserText(message.message);
+        checkAndClose(message.message);
       }
       if (message.source === 'user' && (message.message || message.text || message.transcript)) {
-        handleUserText(message.message || message.text || message.transcript);
+        checkAndClose(message.message || message.text || message.transcript);
       }
 
       // Agent response
