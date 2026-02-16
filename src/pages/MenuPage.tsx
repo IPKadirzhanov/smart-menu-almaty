@@ -113,7 +113,7 @@ const MenuPage: React.FC = () => {
           </button>
           {showVoice && (
             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="w-full mt-3">
-              <VoiceAssistant />
+              <VoiceAssistant onOpenFoodInfo={() => setShowFoodInfo(true)} />
             </motion.div>
           )}
         </div>
