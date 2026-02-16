@@ -2,8 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { menuItems, categoryLabels, tagLabels, Category, Tag } from '@/data/menu';
 import MenuCard from '@/components/MenuCard';
 import VoiceAssistant from '@/components/VoiceAssistant';
-import VoiceAssistantFoodInfo from '@/components/VoiceAssistantFoodInfo';
-import { Search, X, Info } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const categories: Category[] = ['hookah', 'sets', 'appetizers', 'hot', 'salads', 'desserts', 'drinks'];
@@ -14,7 +13,7 @@ const MenuPage: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
   const [activeTags, setActiveTags] = useState<Tag[]>([]);
   const [showVoice, setShowVoice] = useState(false);
-  const [showFoodInfo, setShowFoodInfo] = useState(false);
+  
 
   const filtered = useMemo(() => {
     return menuItems.filter(item => {
@@ -96,29 +95,20 @@ const MenuPage: React.FC = () => {
           ))}
         </div>
 
-        {/* Voice buttons */}
-        <div className="mb-6 flex flex-wrap gap-3">
+        {/* Voice assistant */}
+        <div className="mb-6">
           <button
             onClick={() => setShowVoice(!showVoice)}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl glass-button text-sm font-medium"
           >
             🎙 Голосовой помощник
           </button>
-          <button
-            onClick={() => setShowFoodInfo(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl glass-button text-sm font-medium"
-          >
-            <Info className="w-4 h-4" />
-            Спросить про блюдо (голосом)
-          </button>
           {showVoice && (
             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="w-full mt-3">
-              <VoiceAssistant onOpenFoodInfo={() => setShowFoodInfo(true)} />
+              <VoiceAssistant />
             </motion.div>
           )}
         </div>
-
-        <VoiceAssistantFoodInfo open={showFoodInfo} onClose={() => setShowFoodInfo(false)} />
 
         {/* Grid */}
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">

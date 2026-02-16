@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, ShoppingCart, Info } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import { menuItems } from '@/data/menu';
 import { formatPrice } from '@/lib/aiLogic';
+import InlineFoodInfoPanel from '@/components/InlineFoodInfoPanel';
 
 export interface MenuPickerVariant {
   name: string;
@@ -19,10 +20,10 @@ export interface MenuPickerPayload {
 interface MenuPickerModalProps {
   payload: MenuPickerPayload | null;
   onClose: () => void;
-  onOpenFoodInfo?: () => void;
 }
 
-const MenuPickerModal: React.FC<MenuPickerModalProps> = ({ payload, onClose, onOpenFoodInfo }) => {
+const MenuPickerModal: React.FC<MenuPickerModalProps> = ({ payload, onClose }) => {
+  const [showFoodInfo, setShowFoodInfo] = useState(false);
   const { addItem } = useCart();
 
   if (!payload) return null;
@@ -85,17 +86,20 @@ const MenuPickerModal: React.FC<MenuPickerModalProps> = ({ payload, onClose, onO
               ))}
             </div>
 
-            {/* Ask about dish button */}
-            {onOpenFoodInfo && (
+            {/* Inline Food Info toggle */}
+            {!showFoodInfo && (
               <div className="mt-4 pt-4 border-t border-border/50">
                 <button
-                  onClick={onOpenFoodInfo}
+                  onClick={() => setShowFoodInfo(true)}
                   className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold transition-all bg-secondary hover:bg-secondary/80 text-foreground"
                 >
-                  <Info className="w-4 h-4" /> Спросить голосом о составе
+                  <Info className="w-4 h-4" /> 🎙 Спросить голосом о составе
                 </button>
               </div>
             )}
+
+            {/* Inline Food Info Panel */}
+            <InlineFoodInfoPanel open={showFoodInfo} onClose={() => setShowFoodInfo(false)} />
           </motion.div>
         </motion.div>
       )}
