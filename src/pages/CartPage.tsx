@@ -30,7 +30,7 @@ const CartPage: React.FC = () => {
           </motion.div>
           <h1 className="text-2xl font-display font-bold mb-2">Заказ оформлен!</h1>
           <p className="text-muted-foreground mb-6">Стол {table} • Ожидайте, мы уже готовим</p>
-          <button onClick={() => navigate('/')} className="px-6 py-3 rounded-xl gradient-primary text-primary-foreground font-semibold text-sm">
+          <button onClick={() => navigate('/')} className="px-6 py-3 rounded-xl gradient-primary text-primary-foreground font-semibold text-sm glow-gold">
             На главную
           </button>
         </div>
@@ -73,7 +73,7 @@ const CartPage: React.FC = () => {
                       <Plus className="w-3.5 h-3.5" />
                     </button>
                   </div>
-                  <span className="font-bold text-sm w-24 text-right">{formatPrice(ci.item.priceKZT * ci.quantity)}</span>
+                  <span className="font-bold text-sm w-24 text-right gradient-text">{formatPrice(ci.item.priceKZT * ci.quantity)}</span>
                   <button onClick={() => removeItem(ci.item.id)} className="p-2 rounded-lg hover:bg-destructive/10 text-destructive/60 hover:text-destructive transition-colors">
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -81,7 +81,6 @@ const CartPage: React.FC = () => {
               ))}
             </div>
 
-            {/* Total & Order form */}
             <div className="glass-card rounded-2xl p-6">
               <div className="flex justify-between items-center mb-6">
                 <span className="text-lg font-display font-bold">Итого</span>
@@ -94,21 +93,21 @@ const CartPage: React.FC = () => {
                   placeholder="Номер стола *"
                   value={table}
                   onChange={e => setTable(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl bg-secondary text-sm outline-none focus:ring-2 focus:ring-primary/20"
+                  className="w-full px-4 py-3 rounded-xl bg-secondary text-sm outline-none focus:ring-2 focus:ring-primary/20 border border-border/50"
                 />
                 <textarea
                   placeholder="Комментарий к заказу (необязательно)"
                   value={comment}
                   onChange={e => setComment(e.target.value)}
                   rows={2}
-                  className="w-full px-4 py-3 rounded-xl bg-secondary text-sm outline-none focus:ring-2 focus:ring-primary/20 resize-none"
+                  className="w-full px-4 py-3 rounded-xl bg-secondary text-sm outline-none focus:ring-2 focus:ring-primary/20 resize-none border border-border/50"
                 />
               </div>
 
               <button
                 onClick={handleOrder}
                 disabled={!table.trim()}
-                className="w-full py-3.5 rounded-xl gradient-primary text-primary-foreground font-semibold text-sm transition-all hover:shadow-lg hover:shadow-primary/20 disabled:opacity-40"
+                className="w-full py-3.5 rounded-xl gradient-primary text-primary-foreground font-semibold text-sm transition-all glow-gold hover:shadow-lg disabled:opacity-40"
               >
                 Оформить заказ
               </button>

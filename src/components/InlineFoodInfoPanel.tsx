@@ -9,7 +9,7 @@ function buildFoodInfoContext(): string {
     const allergens = item.allergens.length > 0 ? item.allergens.join(', ') : 'нет';
     return `- ${item.name} (id:${item.id}): ${item.description}. Аллергены: ${allergens}. Категория: ${categoryLabels[item.category]}.`;
   }).join('\n');
-  return `Справочник меню ресторана SmartMenu:\n${lines}`;
+  return `Справочник меню ресторана Aurora Lounge:\n${lines}`;
 }
 
 function normalizeText(text: string): string {
@@ -152,32 +152,32 @@ const InlineFoodInfoPanel: React.FC<Props> = ({ open, onClose }) => {
         initial={{ opacity: 0, height: 0 }}
         animate={{ opacity: 1, height: 'auto' }}
         exit={{ opacity: 0, height: 0 }}
-        className="mt-4 pt-4 border-t border-border/50"
+        className="mt-5 pt-5 border-t border-border/50"
       >
-        <div className="flex items-center justify-between mb-2">
-          <h4 className="font-semibold text-sm">❓ Состав и приготовление</h4>
-          <button onClick={handleClose} className="p-1 rounded hover:bg-secondary text-muted-foreground">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="font-display font-semibold text-sm">Помощник меню</h4>
+          <button onClick={handleClose} className="p-1.5 rounded-lg hover:bg-secondary text-muted-foreground transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
-        <p className="text-xs text-muted-foreground mb-3">Назовите блюдо — я кратко объясню состав и как готовится.</p>
+        <p className="text-xs text-muted-foreground mb-4">Назовите блюдо, и я расскажу состав и как оно готовится.</p>
 
-        {error && <p className="text-xs text-destructive mb-2 bg-destructive/10 p-2 rounded-lg">{error}</p>}
+        {error && <p className="text-xs text-destructive mb-3 bg-destructive/10 p-2 rounded-lg">{error}</p>}
 
         {isActive && (
           <div className="space-y-2 mb-3">
-            <div className={`flex items-center gap-2 text-xs ${isSpeaking ? 'text-primary' : 'text-green-600'}`}>
+            <div className={`flex items-center gap-2 text-xs ${isSpeaking ? 'text-primary' : 'text-green-500'}`}>
               {isSpeaking ? <Volume2 className="w-3.5 h-3.5 animate-pulse" /> : <Mic className="w-3.5 h-3.5 animate-pulse" />}
-              <span className="font-medium">{isSpeaking ? '🔊 Агент говорит' : '🎤 Говорите...'}</span>
+              <span className="font-medium">{isSpeaking ? 'Отвечаю...' : 'Слушаю...'}</span>
             </div>
             {transcript && (
-              <div className="bg-secondary rounded-lg p-2">
+              <div className="bg-secondary rounded-lg p-2.5">
                 <p className="text-[10px] text-muted-foreground mb-0.5">Вы спросили:</p>
                 <p className="text-xs">{transcript}</p>
               </div>
             )}
             {agentText && (
-              <div className="bg-primary/5 rounded-lg p-2 border border-primary/10">
+              <div className="bg-primary/5 rounded-lg p-2.5 border border-primary/10">
                 <p className="text-[10px] text-primary mb-0.5">Ответ:</p>
                 <p className="text-xs">{agentText}</p>
               </div>
@@ -188,13 +188,13 @@ const InlineFoodInfoPanel: React.FC<Props> = ({ open, onClose }) => {
         <button
           onClick={isActive ? stop : start}
           disabled={isConnecting}
-          className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-xs transition-all duration-300 ${
+          className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-xs transition-all duration-300 ${
             isActive
-              ? 'bg-destructive/10 text-destructive hover:bg-destructive/20'
-              : 'gradient-primary text-primary-foreground hover:shadow-lg hover:shadow-primary/20'
+              ? 'bg-destructive/10 text-destructive hover:bg-destructive/20 border border-destructive/20'
+              : 'gradient-primary text-primary-foreground glow-gold hover:shadow-lg'
           } disabled:opacity-50`}
         >
-          {isActive ? <><MicOff className="w-3.5 h-3.5" /> Завершить</> : <><Mic className="w-3.5 h-3.5" /> {isConnecting ? 'Подключение...' : 'Начать разговор'}</>}
+          {isActive ? <><MicOff className="w-3.5 h-3.5" /> Закрыть</> : <><Mic className="w-3.5 h-3.5" /> {isConnecting ? 'Подключение...' : 'Начать разговор'}</>}
         </button>
       </motion.div>
     </AnimatePresence>
