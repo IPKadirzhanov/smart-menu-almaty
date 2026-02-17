@@ -6,9 +6,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import AdminLoginModal from '@/components/AdminLoginModal';
 
 const navLinks = [
-  { to: '/', label: 'Главная' },
   { to: '/menu', label: 'Меню' },
-  { to: '/ai', label: 'AI Помощник' },
+  { to: '/ai', label: 'Помощь с выбором' },
 ];
 
 const Header: React.FC = () => {
@@ -17,13 +16,11 @@ const Header: React.FC = () => {
   const [open, setOpen] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
 
-  // Triple-click detection
   const clickTimestamps = useRef<number[]>([]);
   const handleLogoClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     const now = Date.now();
     clickTimestamps.current.push(now);
-    // Keep only last 3
     if (clickTimestamps.current.length > 3) {
       clickTimestamps.current = clickTimestamps.current.slice(-3);
     }
@@ -40,12 +37,11 @@ const Header: React.FC = () => {
     <>
       <header className="fixed top-0 left-0 right-0 z-50 glass-card border-b border-border/50">
         <div className="page-container flex items-center justify-between h-16">
-          <div className="flex items-center gap-2 cursor-pointer select-none" onClick={handleLogoClick}>
-            <span className="text-xl font-display font-bold gradient-text">SmartMenu</span>
-            <span className="text-xs font-medium text-muted-foreground bg-secondary px-2 py-0.5 rounded-full">AI</span>
-          </div>
+          <Link to="/" className="flex items-center gap-3 cursor-pointer select-none" onClick={handleLogoClick}>
+            <span className="text-xl font-display font-bold gradient-text tracking-wide">Aurora Lounge</span>
+            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-widest hidden sm:block">Алматы</span>
+          </Link>
 
-          {/* Desktop nav */}
           <nav className="hidden md:flex items-center gap-1">
             {navLinks.map(l => (
               <Link
@@ -79,7 +75,6 @@ const Header: React.FC = () => {
           </div>
         </div>
 
-        {/* Mobile menu */}
         <AnimatePresence>
           {open && (
             <motion.nav

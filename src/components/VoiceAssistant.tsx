@@ -18,7 +18,7 @@ function buildMenuContext(): string {
   });
   const lines = Object.entries(grouped).map(([cat, items]) => `${cat}: ${items.join(', ')}`).join('\n');
 
-  return `Ты — голосовой помощник ресторана SmartMenu в Алматы. Помогаешь гостям подобрать заказ по бюджету и предпочтениям.
+  return `Ты — голосовой помощник ресторана Aurora Lounge в Алматы. Помогаешь гостям подобрать заказ по бюджету и предпочтениям.
 
 МЕНЮ РЕСТОРАНА:
 ${lines}

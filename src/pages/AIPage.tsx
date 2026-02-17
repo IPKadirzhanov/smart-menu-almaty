@@ -4,7 +4,6 @@ import { useCart } from '@/context/CartContext';
 import { MenuItem, Tag } from '@/data/menu';
 import ReplacementModal from '@/components/ReplacementModal';
 import VoiceAssistant from '@/components/VoiceAssistant';
-// VoiceAssistantFoodInfo is now inline inside MenuPickerModal
 import { motion, AnimatePresence } from 'framer-motion';
 import { Send, Sparkles, ShoppingCart, ArrowRightLeft, Mic } from 'lucide-react';
 
@@ -53,7 +52,6 @@ const AIPage: React.FC = () => {
       const newItems = set.items.map(i => i.id === oldId ? newItem : i);
       return { ...set, items: newItems, total: newItems.reduce((s, i) => s + i.priceKZT, 0) };
     }));
-    // Also update in messages
     setMessages(prev => prev.map(m => {
       if (!m.sets) return m;
       return {
@@ -71,7 +69,7 @@ const AIPage: React.FC = () => {
     <main className="pt-20 pb-12">
       <div className="page-container max-w-3xl">
         <motion.h1 initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-3xl font-display font-bold mb-2">
-          AI Помощник
+          Помощник меню
         </motion.h1>
         <p className="text-sm text-muted-foreground mb-6">
           Напишите: «нас трое, бюджет 30000, кальян обязателен, без алкоголя» — и получите 3 готовых набора.
@@ -79,8 +77,8 @@ const AIPage: React.FC = () => {
 
         {/* Voice toggle */}
         <div className="mb-4">
-          <button onClick={() => setShowVoice(!showVoice)} className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl glass-button text-sm font-medium">
-            <Mic className="w-4 h-4" /> Голосовой помощник
+          <button onClick={() => setShowVoice(!showVoice)} className="inline-flex items-center gap-2 px-5 py-3 rounded-xl glass-button text-sm font-medium">
+            <Mic className="w-4 h-4" /> 🎙 Помочь выбрать голосом
           </button>
           <AnimatePresence>
             {showVoice && (
@@ -95,7 +93,7 @@ const AIPage: React.FC = () => {
         <div className="space-y-4 mb-4 min-h-[200px]">
           {messages.length === 0 && (
             <div className="text-center py-16">
-              <Sparkles className="w-10 h-10 text-primary/30 mx-auto mb-3" />
+              <Sparkles className="w-10 h-10 text-primary/20 mx-auto mb-3" />
               <p className="text-muted-foreground text-sm">Задайте параметры заказа в чате ниже</p>
             </div>
           )}
@@ -106,7 +104,7 @@ const AIPage: React.FC = () => {
                 {msg.sets && (
                   <div className="mt-4 space-y-4">
                     {msg.sets.map((set, si) => (
-                      <div key={si} className="bg-background/50 rounded-xl p-4 border border-border/50">
+                      <div key={si} className="bg-secondary/50 rounded-xl p-4 border border-border/50">
                         <h4 className="font-semibold text-sm mb-1">{set.name}</h4>
                         <p className="text-xs text-muted-foreground mb-3">{set.description}</p>
                         <div className="space-y-1.5">
@@ -170,7 +168,6 @@ const AIPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Replacement modal */}
       {replaceItem && (
         <ReplacementModal
           item={replaceItem}
@@ -179,8 +176,6 @@ const AIPage: React.FC = () => {
           onClose={() => setReplaceItem(null)}
         />
       )}
-
-      
     </main>
   );
 };

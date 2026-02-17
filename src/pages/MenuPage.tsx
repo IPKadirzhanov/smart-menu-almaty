@@ -13,7 +13,6 @@ const MenuPage: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<Category | null>(null);
   const [activeTags, setActiveTags] = useState<Tag[]>([]);
   const [showVoice, setShowVoice] = useState(false);
-  
 
   const filtered = useMemo(() => {
     return menuItems.filter(item => {
@@ -35,10 +34,11 @@ const MenuPage: React.FC = () => {
         <motion.h1
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="text-3xl font-display font-bold mb-6"
+          className="text-3xl font-display font-bold mb-2"
         >
           Меню
         </motion.h1>
+        <p className="text-sm text-muted-foreground mb-6">Aurora Lounge • Алматы</p>
 
         {/* Search */}
         <div className="relative mb-4">
@@ -48,7 +48,7 @@ const MenuPage: React.FC = () => {
             placeholder="Поиск по меню..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-11 pr-10 py-3 rounded-xl glass-card text-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all"
+            className="w-full pl-11 pr-10 py-3 rounded-xl glass-card text-sm outline-none focus:ring-2 focus:ring-primary/20 transition-all bg-transparent"
           />
           {search && (
             <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-secondary">
@@ -87,7 +87,7 @@ const MenuPage: React.FC = () => {
               key={t}
               onClick={() => toggleTag(t)}
               className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 ${
-                activeTags.includes(t) ? 'bg-primary/15 text-primary border border-primary/30' : 'bg-secondary text-muted-foreground border border-transparent'
+                activeTags.includes(t) ? 'bg-primary/15 text-primary border border-primary/30' : 'bg-secondary text-muted-foreground border border-border/50'
               }`}
             >
               {tagLabels[t]}
@@ -101,7 +101,7 @@ const MenuPage: React.FC = () => {
             onClick={() => setShowVoice(!showVoice)}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl glass-button text-sm font-medium"
           >
-            🎙 Голосовой помощник
+            🎙 Помочь выбрать
           </button>
           {showVoice && (
             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="w-full mt-3">
